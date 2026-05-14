@@ -25,10 +25,31 @@ const CONFIG = {
   ],
 
   // Injected via stdin before shutdown so the CLI persists its state
-  saveStateCommand: 'Aktualisiere die STATE.md mit dem aktuellen Fortschritt und speichere ab.\n',
+  saveStateCommand: [
+    'Aktualisiere jetzt zwingend die Datei STATE.md. Dokumentiere kurz und präzise:\n',
+    '\n',
+    'Aktueller Status: Was haben wir gerade konkret erreicht?\n',
+    '\n',
+    'Zuletzt bearbeitete Dateien: Liste exakt die Dateien auf, die für den nächsten Schritt wichtig sind.\n',
+    '\n',
+    'Offene Bugs/Probleme: Was klemmt gerade noch?\n',
+    '\n',
+    'Nächster exakter Schritt: Was genau muss als Nächstes programmiert werden?\n',
+    '\n',
+    "Führe danach sofort die nötigen Git-Befehle aus, um alle Änderungen inklusive der STATE.md zu committen und in das Projekt-Repo zu pushen. Nutze als Commit-Nachricht: 'chore: status update for handover'\n",
+  ].join(''),
 
-  // Injected via stdin after restart to resume from saved state
-  resumeCommand: 'Lies die STATE.md und setze die Arbeit exakt dort fort.\n',
+  // Injected via stdin after restart to resume from saved state.
+  // Replace the placeholder with your actual GitHub repository URL before use.
+  resumeCommand: [
+    'Hier ist das Projekt-Repository: [HIER NUR DEN GITHUB LINK EINFÜGEN]\n',
+    '\n',
+    'Klone oder öffne dieses Repo lokal. Lies danach als allererstes AUSSCHLIESSLICH die Datei STATE.md.\n',
+    '\n',
+    "Lese anschließend NUR die Dateien ein, die in der STATE.md unter 'Zuletzt bearbeitete Dateien' aufgeführt sind. Scanne auf keinen Fall das restliche Projektverzeichnis!\n",
+    '\n',
+    "Fasse mir in einem kurzen Satz zusammen, was das Ziel ist, und beginne dann sofort mit der Umsetzung des Punkts 'Nächster exakter Schritt' aus der STATE.md.\n",
+  ].join(''),
 
   // ms to wait for the CLI to handle saveStateCommand before escalating to SIGTERM
   gracefulShutdownTimeout: 15_000,
