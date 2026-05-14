@@ -3,8 +3,13 @@
 'use strict';
 
 const { spawn, execSync } = require('child_process');
-const fs   = require('fs');
-const path = require('path');
+const fs       = require('fs');
+const path     = require('path');
+const readline = require('readline');
+
+// Repo URL captured once at startup via interactive prompt; used in every
+// resumeCommand() call throughout the session.
+let repoUrl = '';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -39,11 +44,9 @@ const CONFIG = {
     "Führe danach sofort die nötigen Git-Befehle aus, um alle Änderungen inklusive der STATE.md zu committen und in das Projekt-Repo zu pushen. Nutze als Commit-Nachricht: 'chore: status update for handover'\n",
   ].join(''),
 
-  // Built at call-time so RESUME_REPO_URL can be set in .env and changed
-  // between runs without touching this file.
+  // Built at call-time using the URL entered interactively at startup.
   resumeCommand() {
-    const url = process.env.RESUME_REPO_URL
-      || '[RESUME_REPO_URL nicht gesetzt — bitte in .env eintragen]';
+    const url = repoUrl || '[keine Repo-URL angegeben]';
     return [
       `Hier ist das Projekt-Repository: ${url}\n`,
       '\n',
@@ -164,6 +167,48 @@ class SniffBuffer {
   flush() {
     if (this._buf) { this._cb(this._buf); this._buf = ''; }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Interactive startup prompt
+// ---------------------------------------------------------------------------
+
+// Ask the user for the GitHub repo URL before the first child process starts.
+// Uses a dedicated readline.Interface that is fully closed before we hand
+// stdin over to the transparent proxy — leaving no dangling listeners or
+// stream state that could interfere with raw-mode passthrough.
+//
+// In non-TTY environments (CI, piped input) the prompt is skipped and the
+// value of RESUME_REPO_URL from the environment is used as a fallback.
+function promptRepoUrl() {
+  if (!process.stdin.isTTY) {
+    const fallback = process.env.RESUME_REPO_URL || '';
+    log.info(`Non-TTY — skipping prompt, RESUME_REPO_URL="${fallback || '(leer)'}"`);
+    return Promise.resolve(fallback);
+  }
+
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({
+      input:  process.stdin,
+      output: process.stdout,
+      // terminal:true is the default for TTY; readline manages raw mode
+      // internally and restores cooked mode when rl.close() is called.
+    });
+
+    // Ctrl-C during the prompt → clean exit (no dangling rl state)
+    rl.on('SIGINT', () => {
+      process.stdout.write('\n');
+      rl.close();
+      process.exit(0);
+    });
+
+    rl.question('Bitte GitHub Repo URL eingeben: ', (answer) => {
+      rl.close();
+      // After rl.close() readline has removed its stdin listeners and called
+      // setRawMode(false); stdin is paused — a clean slate for our proxy.
+      resolve(answer.trim());
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -469,6 +514,11 @@ async function main() {
       if (process.stdin.isTTY && process.stdin.isRaw) process.stdin.setRawMode(false);
     } catch { /* best-effort */ }
   });
+
+  // Prompt for the repo URL BEFORE spawning anything; stores result in the
+  // module-level repoUrl variable consumed by CONFIG.resumeCommand().
+  repoUrl = await promptRepoUrl();
+  log.info(`Repo URL: ${repoUrl || '(keine — resumeCommand wird Platzhalter enthalten)'}`);
 
   const manager = new SessionManager(tokens);
 
