@@ -39,17 +39,21 @@ const CONFIG = {
     "Führe danach sofort die nötigen Git-Befehle aus, um alle Änderungen inklusive der STATE.md zu committen und in das Projekt-Repo zu pushen. Nutze als Commit-Nachricht: 'chore: status update for handover'\n",
   ].join(''),
 
-  // Injected via stdin after restart to resume from saved state.
-  // Replace the placeholder with your actual GitHub repository URL before use.
-  resumeCommand: [
-    'Hier ist das Projekt-Repository: [HIER NUR DEN GITHUB LINK EINFÜGEN]\n',
-    '\n',
-    'Klone oder öffne dieses Repo lokal. Lies danach als allererstes AUSSCHLIESSLICH die Datei STATE.md.\n',
-    '\n',
-    "Lese anschließend NUR die Dateien ein, die in der STATE.md unter 'Zuletzt bearbeitete Dateien' aufgeführt sind. Scanne auf keinen Fall das restliche Projektverzeichnis!\n",
-    '\n',
-    "Fasse mir in einem kurzen Satz zusammen, was das Ziel ist, und beginne dann sofort mit der Umsetzung des Punkts 'Nächster exakter Schritt' aus der STATE.md.\n",
-  ].join(''),
+  // Built at call-time so RESUME_REPO_URL can be set in .env and changed
+  // between runs without touching this file.
+  resumeCommand() {
+    const url = process.env.RESUME_REPO_URL
+      || '[RESUME_REPO_URL nicht gesetzt — bitte in .env eintragen]';
+    return [
+      `Hier ist das Projekt-Repository: ${url}\n`,
+      '\n',
+      'Klone oder öffne dieses Repo lokal. Lies danach als allererstes AUSSCHLIESSLICH die Datei STATE.md.\n',
+      '\n',
+      "Lese anschließend NUR die Dateien ein, die in der STATE.md unter 'Zuletzt bearbeitete Dateien' aufgeführt sind. Scanne auf keinen Fall das restliche Projektverzeichnis!\n",
+      '\n',
+      "Fasse mir in einem kurzen Satz zusammen, was das Ziel ist, und beginne dann sofort mit der Umsetzung des Punkts 'Nächster exakter Schritt' aus der STATE.md.\n",
+    ].join('');
+  },
 
   // ms to wait for the CLI to handle saveStateCommand before escalating to SIGTERM
   gracefulShutdownTimeout: 15_000,
@@ -81,6 +85,12 @@ function loadEnv(envPath = path.join(__dirname, '.env')) {
     if (eq === -1) continue;
     const key   = t.slice(0, eq).trim();
     const value = t.slice(eq + 1).trim().replace(/^["']|["']$/g, '');
+
+    // Write every key into process.env so CONFIG.resumeCommand()() and other
+    // runtime reads (CLI_COMMAND, CLI_EXTRA_ARGS, …) pick up .env values
+    // even when the script is not launched via a shell that sources .env.
+    process.env[key] = value;
+
     const m = key.match(/^SESSION_TOKEN_(\d+)$/);
     if (m) tokens[parseInt(m[1], 10) - 1] = value;
   }
@@ -402,7 +412,7 @@ class SessionManager {
 
       // Inject resume command BEFORE re-attaching user stdin so there is no
       // interleaving between the injected command and user keystrokes.
-      const sent = await writeToStdin(child.stdin, CONFIG.resumeCommand);
+      const sent = await writeToStdin(child.stdin, CONFIG.resumeCommand());
       log.info(sent ? 'Resume command injected' : 'Resume command skipped (stdin not ready)');
 
       this.attachStdinPassthrough(child);     // restore interactive passthrough
@@ -424,7 +434,7 @@ class SessionManager {
     log.info(`Waiting ${CONFIG.resumeDelay}ms for initial CLI startup …`);
     await new Promise((r) => setTimeout(r, CONFIG.resumeDelay));
 
-    const sent = await writeToStdin(child.stdin, CONFIG.resumeCommand);
+    const sent = await writeToStdin(child.stdin, CONFIG.resumeCommand());
     log.info(sent ? 'Initial resume command sent' : 'Initial resume command skipped');
 
     this.attachStdinPassthrough(child);
